@@ -146,7 +146,7 @@ void TCN::ProduceVariation(int ntoys, bool flag_norm)
       for( int ibin=1; ibin<=BINS; ibin++ ) {
         double pred_cv = matrix_pred(0, ibin-1);
         double pred_var = pred_cv * (1+val_rand_relerr);
-        if( pred_var<0 ) pred_var = 0;
+        if( pred_var<0 ) pred_var = 0;// ??? remove this requirement or not
         
         array_obj_syst[ibin-1] = pred_var;
         map_toy_meas[itoy][ibin] = rand->Poisson( pred_var );
@@ -228,8 +228,12 @@ void TCN::ProduceVariation(int ntoys, bool flag_norm)
     for(int idx=0; idx<BINS; idx++) matrix_stat_abscov(idx, idx) = matrix_pred(0, idx);
 
     TMatrixD matrix_total_abscov(BINS, BINS);
-    matrix_total_abscov = matrix_stat_abscov + matrix_syst_abscov;
+    //matrix_total_abscov = matrix_stat_abscov + matrix_syst_abscov;
+    matrix_total_abscov = matrix_syst_abscov;
 
+    // for(int idx=0; idx<BINS; idx++)
+    //   cout<<" ---> check "<<idx+1<<"\t"<<matrix_pred(0, idx)<<"\t"<<sqrt( matrix_total_abscov(idx, idx) )<<endl;
+    
     ////////////////////////////////
     
     TMatrixDSym DSmatrix_cov(BINS);
@@ -242,8 +246,14 @@ void TCN::ProduceVariation(int ntoys, bool flag_norm)
     TMatrixD matrix_eigenvector = DSmatrix_eigen.GetEigenVectors();
     TVectorD matrix_eigenvalue = DSmatrix_eigen.GetEigenValues();
 
+    ///////
+    // TPrincipal principal_obj_total(BINS, "ND");
+    
     for(int itoy=1; itoy<=TOYS; itoy++) {    
-      TMatrixD matrix_element(BINS, 1);    
+      TMatrixD matrix_element(BINS, 1);
+
+      // double *array_obj_total = new double[BINS];
+      
       for(int idx=0; idx<BINS; idx++) {
 	if( matrix_eigenvalue(idx)>=0 ) {
 	  matrix_element(idx,0) = rand->Gaus( 0, sqrt( matrix_eigenvalue(idx) ) );
@@ -252,13 +262,75 @@ void TCN::ProduceVariation(int ntoys, bool flag_norm)
 	  matrix_element(idx,0) = 0;
 	}      
       }
+      
       TMatrixD matrix_variation = matrix_eigenvector * matrix_element;
+      
       for(int idx=0; idx<BINS; idx++) {
 	double val_with_syst = matrix_variation(idx,0) + matrix_pred(0, idx);// key point
-	if( val_with_syst<0 ) val_with_syst = 0;
+	if( val_with_syst<0 ) val_with_syst = 0;// ??? remove this requirement or not
 	map_toy_meas[itoy][idx+1] = val_with_syst;
-      }
-    }
+	// array_obj_total[idx] = val_with_syst;
+      }// idx
+
+      // principal_obj_total.AddRow( array_obj_total );
+      // delete[] array_obj_total;
+      
+    }// itoy
+
+    // //////////////////////////////////////////////////////////// obj_total
+    
+    // TMatrixD *matrix_abscov_obj_total = (TMatrixD *)principal_obj_total.GetCovarianceMatrix();
+    
+    // for(int idx=0; idx<BINS; idx++) {
+    //   for(int jdx=0; jdx<BINS; jdx++) {
+    //     if(idx<jdx) (*matrix_abscov_obj_total)(idx, jdx) = (*matrix_abscov_obj_total)(jdx, idx);
+    //   }
+    // }
+
+    // ///////////
+    // TMatrixD matrix_relcov_obj_total(BINS, BINS);
+    // TMatrixD matrix_correlation_obj_total(BINS, BINS);
+    
+    // for(int idx=0; idx<BINS; idx++) {
+    //   for(int jdx=0; jdx<BINS; jdx++) {
+    //     double cov_ij = (*matrix_abscov_obj_total)(idx, jdx);
+    //     double cov_ii = (*matrix_abscov_obj_total)(idx, idx);
+    //     double cov_jj = (*matrix_abscov_obj_total)(jdx, jdx);
+        
+    //     double cv_i = matrix_pred(0, idx);
+    //     double cv_j = matrix_pred(0, jdx);
+        
+    //     if( cv_i!=0 && cv_j!=0 ) matrix_relcov_obj_total(idx, jdx) = cov_ij/cv_i/cv_j;
+        
+    //     if( cov_ii!=0 && cov_jj!=0 ) matrix_correlation_obj_total(idx, jdx) = cov_ij/sqrt(cov_ii)/sqrt(cov_jj);
+    //     //if( idx==jdx ) matrix_correlation_obj_total(idx, jdx) = 1;       
+    //   }
+    // }
+    
+    // ///////////
+    // roostr = "canv_matrix_relcov_obj_total";
+    // TCanvas *canv_matrix_relcov_obj_total = new TCanvas(roostr, roostr, 900, 850);
+    // func_canv_margin(canv_matrix_relcov_obj_total, 0.15, 0.2,0.15,0.2);
+    // roostr = "h2_relcov_obj_total";
+    // TH2D *h2_relcov_obj_total = new TH2D(roostr, "", BINS, 0, BINS, BINS, 0, BINS);
+    // for(int idx=0; idx<BINS; idx++)
+    //   for(int jdx=0; jdx<BINS; jdx++)
+    //  h2_relcov_obj_total->SetBinContent( idx+1, jdx+1, matrix_relcov_obj_total(idx, jdx) );
+    // h2_relcov_obj_total->Draw("colz");
+    // func_xy_title(h2_relcov_obj_total, "Bin index", "Bin index");
+   
+    // ///////////
+    // roostr = "canv_matrix_correlation_obj_total";
+    // TCanvas *canv_matrix_correlation_obj_total = new TCanvas(roostr, roostr, 900, 850);
+    // func_canv_margin(canv_matrix_correlation_obj_total, 0.15, 0.2,0.15,0.2);
+    // roostr = "h2_correlation_obj_total";
+    // TH2D *h2_correlation_obj_total = new TH2D(roostr, "", BINS, 0, BINS, BINS, 0, BINS);
+    // for(int idx=0; idx<BINS; idx++)
+    //   for(int jdx=0; jdx<BINS; jdx++)
+    //  h2_correlation_obj_total->SetBinContent( idx+1, jdx+1, matrix_correlation_obj_total(idx, jdx) );
+    // h2_correlation_obj_total->Draw("colz");
+    // func_xy_title(h2_correlation_obj_total, "Bin index", "Bin index");
+    // h2_correlation_obj_total->GetZaxis()->SetRangeUser(-1,1);
     
   }// else of if( flag_norm )
   
@@ -294,9 +366,11 @@ void TCN::Initialization(bool flag_norm)
     TMatrixD *matrix_gof_syst = (TMatrixD*)file_numu->Get("matrix_gof_syst");
     
     int rows = matrix_gof_syst->GetNrows();
-
     BINS = rows;
 
+    // for(int idx=0; idx<rows; idx++)
+    //   cout<<" ---> check "<<idx+1<<"\t"<<(*matrix_gof_pred)(0, idx)<<"\t"<<sqrt( (*matrix_gof_syst)(idx, idx) )<<endl;
+    
     matrix_pred.Clear(); matrix_pred.ResizeTo(1, rows); matrix_pred = (*matrix_gof_pred);
     matrix_meas.Clear(); matrix_meas.ResizeTo(1, rows); matrix_meas = (*matrix_gof_meas);
     matrix_syst_abscov.Clear(); matrix_syst_abscov.ResizeTo(rows, rows); matrix_syst_abscov = (*matrix_gof_syst);
@@ -321,23 +395,23 @@ void TCN::Initialization(bool flag_norm)
     }
     
     // ///////////
-    // roostr = "canv_h2_gof_relcov";
-    // TCanvas *canv_h2_gof_relcov = new TCanvas(roostr, roostr, 900, 850);
-    // func_canv_margin(canv_h2_gof_relcov, 0.15, 0.2,0.15,0.2);
-    // h2_gof_relcov->Draw("colz");
-    // func_xy_title(h2_gof_relcov, "Bin index", "Bin index");
-    // h2_gof_relcov->GetXaxis()->CenterTitle(); h2_gof_relcov->GetYaxis()->CenterTitle();
-    // canv_h2_gof_relcov->SaveAs("canv_h2_gof_relcov.png");
+    roostr = "canv_h2_gof_relcov";
+    TCanvas *canv_h2_gof_relcov = new TCanvas(roostr, roostr, 900, 850);
+    func_canv_margin(canv_h2_gof_relcov, 0.15, 0.2,0.15,0.2);
+    h2_gof_relcov->Draw("colz");
+    func_xy_title(h2_gof_relcov, "Bin index", "Bin index");
+    h2_gof_relcov->GetXaxis()->CenterTitle(); h2_gof_relcov->GetYaxis()->CenterTitle();
+    canv_h2_gof_relcov->SaveAs("canv_h2_gof_relcov.png");
       
-    // ///////////
-    // roostr = "canv_h2_gof_correlation";
-    // TCanvas *canv_h2_gof_correlation = new TCanvas(roostr, roostr, 900, 850);
-    // func_canv_margin(canv_h2_gof_correlation, 0.15, 0.2,0.15,0.2);
-    // h2_gof_correlation->Draw("colz");
-    // h2_gof_correlation->GetZaxis()->SetRangeUser(-1,1);
-    // func_xy_title(h2_gof_correlation, "Bin index", "Bin index");       
-    // h2_gof_correlation->GetXaxis()->CenterTitle(); h2_gof_correlation->GetYaxis()->CenterTitle();
-    // canv_h2_gof_correlation->SaveAs("canv_h2_gof_correlation.png");
+    ///////////
+    roostr = "canv_h2_gof_correlation";
+    TCanvas *canv_h2_gof_correlation = new TCanvas(roostr, roostr, 900, 850);
+    func_canv_margin(canv_h2_gof_correlation, 0.15, 0.2,0.15,0.2);
+    h2_gof_correlation->Draw("colz");
+    h2_gof_correlation->GetZaxis()->SetRangeUser(-1,1);
+    func_xy_title(h2_gof_correlation, "Bin index", "Bin index");       
+    h2_gof_correlation->GetXaxis()->CenterTitle(); h2_gof_correlation->GetYaxis()->CenterTitle();
+    canv_h2_gof_correlation->SaveAs("canv_h2_gof_correlation.png");
       
   }// else of if( FLAG_NORM )
   

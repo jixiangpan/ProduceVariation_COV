@@ -55,7 +55,7 @@ public:
   TCN() {
     cout<<endl<<" ---> Hello TCN"<<endl<<endl;
 
-    rand = new TRandom3(0);
+    rand = new TRandom3(100001);
 
     BINS = 0;
     TOYS = 0;
@@ -88,6 +88,11 @@ public:
   void SetToy(int itoy) {
     matrix_fake_meas.Clear(); matrix_fake_meas.ResizeTo(1, BINS);    
     for(int ibin=1; ibin<=BINS; ibin++) matrix_fake_meas(0, ibin-1) = map_toy_meas[itoy][ibin];
+  }
+
+  void SetMeas2Use() {
+    matrix_fake_meas.Clear(); matrix_fake_meas.ResizeTo(1, BINS);
+    for(int ibin=1; ibin<=BINS; ibin++) matrix_fake_meas(0, ibin-1) = matrix_meas(0, ibin-1);
   }
   
   double GetChi2(TMatrixD matrix_pred_temp, TMatrixD matrix_meas_temp, TMatrixD matrix_syst_abscov_temp);
@@ -228,8 +233,7 @@ void TCN::ProduceVariation(int ntoys, bool flag_norm)
     for(int idx=0; idx<BINS; idx++) matrix_stat_abscov(idx, idx) = matrix_pred(0, idx);
 
     TMatrixD matrix_total_abscov(BINS, BINS);
-    //matrix_total_abscov = matrix_stat_abscov + matrix_syst_abscov;
-    matrix_total_abscov = matrix_syst_abscov;
+    matrix_total_abscov = matrix_stat_abscov + matrix_syst_abscov;
 
     // for(int idx=0; idx<BINS; idx++)
     //   cout<<" ---> check "<<idx+1<<"\t"<<matrix_pred(0, idx)<<"\t"<<sqrt( matrix_total_abscov(idx, idx) )<<endl;
@@ -395,23 +399,23 @@ void TCN::Initialization(bool flag_norm)
     }
     
     // ///////////
-    roostr = "canv_h2_gof_relcov";
-    TCanvas *canv_h2_gof_relcov = new TCanvas(roostr, roostr, 900, 850);
-    func_canv_margin(canv_h2_gof_relcov, 0.15, 0.2,0.15,0.2);
-    h2_gof_relcov->Draw("colz");
-    func_xy_title(h2_gof_relcov, "Bin index", "Bin index");
-    h2_gof_relcov->GetXaxis()->CenterTitle(); h2_gof_relcov->GetYaxis()->CenterTitle();
-    canv_h2_gof_relcov->SaveAs("canv_h2_gof_relcov.png");
+    // roostr = "canv_h2_gof_relcov";
+    // TCanvas *canv_h2_gof_relcov = new TCanvas(roostr, roostr, 900, 850);
+    // func_canv_margin(canv_h2_gof_relcov, 0.15, 0.2,0.15,0.2);
+    // h2_gof_relcov->Draw("colz");
+    // func_xy_title(h2_gof_relcov, "Bin index", "Bin index");
+    // h2_gof_relcov->GetXaxis()->CenterTitle(); h2_gof_relcov->GetYaxis()->CenterTitle();
+    // canv_h2_gof_relcov->SaveAs("canv_h2_gof_relcov.png");
       
-    ///////////
-    roostr = "canv_h2_gof_correlation";
-    TCanvas *canv_h2_gof_correlation = new TCanvas(roostr, roostr, 900, 850);
-    func_canv_margin(canv_h2_gof_correlation, 0.15, 0.2,0.15,0.2);
-    h2_gof_correlation->Draw("colz");
-    h2_gof_correlation->GetZaxis()->SetRangeUser(-1,1);
-    func_xy_title(h2_gof_correlation, "Bin index", "Bin index");       
-    h2_gof_correlation->GetXaxis()->CenterTitle(); h2_gof_correlation->GetYaxis()->CenterTitle();
-    canv_h2_gof_correlation->SaveAs("canv_h2_gof_correlation.png");
+    // ///////////
+    // roostr = "canv_h2_gof_correlation";
+    // TCanvas *canv_h2_gof_correlation = new TCanvas(roostr, roostr, 900, 850);
+    // func_canv_margin(canv_h2_gof_correlation, 0.15, 0.2,0.15,0.2);
+    // h2_gof_correlation->Draw("colz");
+    // h2_gof_correlation->GetZaxis()->SetRangeUser(-1,1);
+    // func_xy_title(h2_gof_correlation, "Bin index", "Bin index");       
+    // h2_gof_correlation->GetXaxis()->CenterTitle(); h2_gof_correlation->GetYaxis()->CenterTitle();
+    // canv_h2_gof_correlation->SaveAs("canv_h2_gof_correlation.png");
       
   }// else of if( FLAG_NORM )
   
@@ -442,13 +446,13 @@ void read_obj()
   gStyle->SetMarkerStyle(20);
   gStyle->SetMarkerSize(1.2);
   gStyle->SetEndErrorSize(4);
-  gStyle->SetEndErrorSize(0);
+  gStyle->SetEndErrorSize(2);
 
   TString roostr = "";
   
   ////////////////////////////////////////////////////////////////////////////////////////
   
-  bool flag_norm = 0;  
+  bool   flag_norm   = 0;  
   double norm_relerr = 0.2;
   
   TCN *testcn = new TCN();
@@ -457,13 +461,93 @@ void read_obj()
  
   testcn->Set_norm_relerr( norm_relerr );
 
+  if( 1 ) {
+    testcn->SetMeas2Use();
+    double chi2_meas = testcn->GetChi2( testcn->matrix_pred, testcn->matrix_fake_meas, testcn->matrix_syst_abscov );
+    cout<<endl<<" ---> check chi2_meas: "<<chi2_meas<<endl<<endl;
+  }
+
+  int ntoys = 10000;
+  testcn->ProduceVariation( ntoys, flag_norm );
+  for(int idx=1; idx<=100; idx++) {
+    testcn->SetToy(idx);
+    double chi2 = testcn->GetChi2( testcn->matrix_pred, testcn->matrix_fake_meas, testcn->matrix_syst_abscov );
+    //cout<<TString::Format(" ---> itoy %4d, chi2 %7.2f", idx, chi2)<<endl;
+  }
+
+  if( 1 ) {
+    int itoy = 90;
+   
+    TMatrixD matrix_toy_syst_abscov = testcn->matrix_syst_abscov;
+    int rows = matrix_toy_syst_abscov.GetNrows();
+    
+    TMatrixD matrix_toy_pred = testcn->matrix_pred;
+    TMatrixD matrix_toy_meas(1, rows);
+    
+    TH1D *h1_fake_meas = new TH1D("h1_fake_meas", "", rows, 0, rows);
+    TGraphErrors *gh_fake_meas = new TGraphErrors();
+    TH1D *h1_pred = new TH1D("h1_pred", "", rows, 0, rows);
+    
+    for(int ibin=1; ibin<=rows; ibin++) {
+
+      double val_fake_meas = testcn->map_toy_meas[itoy][ibin];
+      
+      ///////
+      matrix_toy_meas(0, ibin-1) = val_fake_meas;
+
+      ///////
+      h1_fake_meas->SetBinContent(ibin, val_fake_meas);
+      gh_fake_meas->SetPoint( ibin-1, h1_fake_meas->GetBinCenter(ibin), val_fake_meas );
+      gh_fake_meas->SetPointError( ibin-1, 0, sqrt(val_fake_meas) );      
+      
+      h1_pred->SetBinContent( ibin, testcn->matrix_pred(0, ibin-1) );
+      h1_pred->SetBinError( ibin, sqrt(testcn->matrix_syst_abscov(ibin-1, ibin-1)) );
+    }
+    
+    double chi2 = testcn->GetChi2( matrix_toy_pred, matrix_toy_meas, matrix_toy_syst_abscov );
+    cout<<endl<<TString::Format(" ---> check itoy %4d, chi2 %7.2f", itoy, chi2)<<endl<<endl;
+    
+    roostr = "canv_h1_fake_meas";
+    TCanvas *canv_h1_fake_meas = new TCanvas(roostr, roostr, 900, 650);
+    func_canv_margin(canv_h1_fake_meas, 0.15, 0.1, 0.1, 0.15);
+    
+    TH1D *h1_pred_clone = (TH1D*)h1_pred->Clone("h1_pred_clone");
+    h1_pred_clone->Draw("e2");
+    h1_pred_clone->SetMinimum(0);
+    h1_pred_clone->SetFillColor(kRed); h1_pred_clone->SetFillStyle(3005);
+    h1_pred_clone->SetMarkerSize(0);
+    h1_pred_clone->SetLineColor(kRed);
+    func_xy_title(h1_pred_clone, "Bin index", "Entries");
+    func_title_size(h1_pred_clone, 0.05, 0.05, 0.05, 0.05);
+    h1_pred_clone->GetXaxis()->CenterTitle(); h1_pred_clone->GetYaxis()->CenterTitle();
+    h1_pred_clone->GetYaxis()->SetTitleOffset(1.5); 
+
+    h1_pred->Draw("hist same");
+    h1_pred->SetLineColor(kRed);
+
+    gh_fake_meas->Draw("same p");
+    gh_fake_meas->SetMarkerStyle(20);
+    gh_fake_meas->SetMarkerSize(1.1);
+    gh_fake_meas->SetMarkerColor(kBlack);
+    gh_fake_meas->SetLineColor(kBlack);
+
+    TLegend *lg_chi2_toy = new TLegend(0.17, 0.65, 0.4, 0.85);    
+    lg_chi2_toy->AddEntry(gh_fake_meas, TString::Format("#color[%d]{Fake data}", kBlack), "p");
+    lg_chi2_toy->AddEntry(h1_pred_clone, TString::Format("#color[%d]{Prediction}", kRed), "fl");
+    lg_chi2_toy->AddEntry("", TString::Format("#color[%d]{#chi^{2}/ndf: %4.1f/%d}", kRed, chi2, rows), "");
+    lg_chi2_toy->Draw();
+    lg_chi2_toy->SetBorderSize(0); lg_chi2_toy->SetFillStyle(0); lg_chi2_toy->SetTextSize(0.065);
+
+    canv_h1_fake_meas->SaveAs("canv_h1_fake_meas.png");
+  }
+  
+  /*
   int ntoys = 100000;
   testcn->ProduceVariation( ntoys, flag_norm );
-
-  /* 
+  
   double low_chi2 = 0;
-  double hgh_chi2 = 100;
-  int bins_chi2 = 500;
+  double hgh_chi2 = 120;
+  int bins_chi2 = 200;
   int ndf_chi2 = testcn->BINS;
   
   roostr = "h1_toy_chi2";
@@ -497,10 +581,18 @@ void read_obj()
 			      low_chi2, hgh_chi2);
   f1_chi2_temp->Draw("same");
 
+  h1_toy_chi2->Draw("same axis");
+  
   if( f1_chi2_temp->GetMaximum() > h1_toy_chi2->GetMaximum() ) {
     h1_toy_chi2->SetMaximum( f1_chi2_temp->GetMaximum() * 1.1 );
   }
+
+  TLegend *lg_chi2_toy = new TLegend(0.6, 0.70, 0.83, 0.85);
+  lg_chi2_toy->AddEntry(h1_toy_chi2, TString::Format("#color[%d]{Toy result}", kBlue), "l");
+  lg_chi2_toy->AddEntry(f1_chi2_temp, TString::Format("#color[%d]{#chi^{2}(%d)}", kRed, ndf_chi2), "l");  
+  lg_chi2_toy->Draw();
+  lg_chi2_toy->SetBorderSize(0); lg_chi2_toy->SetFillStyle(0); lg_chi2_toy->SetTextSize(0.065);
   
   canv_h1_toy_chi2->SaveAs("canv_h1_toy_chi2.png");
-  */  
+  */ 
 }

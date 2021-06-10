@@ -96,30 +96,344 @@ public:
   }
   
   double GetChi2(TMatrixD matrix_pred_temp, TMatrixD matrix_meas_temp, TMatrixD matrix_syst_abscov_temp);
+
+  void Plotting_singlecase(TMatrixD matrix_pred_temp, TMatrixD matrix_meas_temp, TMatrixD matrix_syst_abscov_temp, bool saveFIG, int index);
 };
+
+/////////////////////// ccc
+
+void TCN::Plotting_singlecase(TMatrixD matrix_pred_temp, TMatrixD matrix_meas_temp, TMatrixD matrix_syst_abscov_temp, bool saveFIG, int index)
+{
+  TString roostr = "";
+  
+  int rows = matrix_pred_temp.GetNcols();
+  TMatrixD matrix_stat_cov(rows, rows);
+  for(int idx=0; idx<rows; idx++) matrix_stat_cov(idx, idx) = matrix_pred_temp(0, idx);
+  TMatrixD matrix_total_cov(rows, rows); matrix_total_cov = matrix_syst_abscov_temp + matrix_stat_cov;
+
+  double determinant = matrix_total_cov.Determinant();
+  if( determinant==0 ) {
+    cerr<<endl<<" Error: determinant of total COV is 0"<<endl<<endl; exit(1);
+  }
+  
+  double chi2 = GetChi2(matrix_pred_temp, matrix_meas_temp, matrix_syst_abscov_temp);
+  cout<<endl<<TString::Format(" ---> check chi2_normal %7.2f", chi2)<<endl;
+  
+  TMatrixDSym DSmatrix_cov(rows);
+  for(int ibin=0; ibin<rows; ibin++)
+    for(int jbin=0; jbin<rows; jbin++)
+      DSmatrix_cov(ibin, jbin) = matrix_total_cov(ibin, jbin);
+  TMatrixDSymEigen DSmatrix_eigen( DSmatrix_cov );
+  TMatrixD matrix_eigenvector = DSmatrix_eigen.GetEigenVectors();
+  TVectorD matrix_eigenvalue = DSmatrix_eigen.GetEigenValues();
+  TMatrixD matrix_eigenvector_T = matrix_eigenvector.T(); matrix_eigenvector.T();
+
+  TMatrixD matrix_lambda_pred = matrix_pred_temp * matrix_eigenvector;
+  TMatrixD matrix_lambda_meas = matrix_meas_temp * matrix_eigenvector;
+  TMatrixD matrix_delta_lambda = matrix_lambda_meas - matrix_lambda_pred;
+  TMatrixD matrix_delta_lambda_T = matrix_delta_lambda.T(); matrix_delta_lambda.T();
+
+  TMatrixD matrix_cov_lambda(rows, rows);
+  for(int idx=0; idx<rows; idx++) matrix_cov_lambda(idx, idx) = matrix_eigenvalue(idx);
+  TMatrixD matrix_cov_lambda_inv = matrix_cov_lambda; matrix_cov_lambda_inv.Invert();
+  double chi2_lambda = (matrix_delta_lambda * matrix_cov_lambda_inv * matrix_delta_lambda_T)(0,0);
+  cout<<TString::Format(" ---> check chi2_lambda %7.2f", chi2_lambda)<<endl<<endl;
+
+  //////////////////////////////////////////////// Plotting
+
+  int color_pred = kRed;
+  int color_meas = kBlack;
+
+  TF1 *ff_1 = new TF1("ff_1", "1", 0, 1e3);
+  ff_1->SetLineColor(kGray+1); ff_1->SetLineStyle(7);
+
+  TF1 *ff_0 = new TF1("ff_0", "0", 0, 1e3);
+  ff_0->SetLineColor(kGray+1); ff_0->SetLineStyle(7);
+
+  TH1D *h1_fake_meas = new TH1D(TString::Format("h1_fake_meas_%d", index), "", rows, 0, rows);
+  TGraphErrors *gh_fake_meas = new TGraphErrors();
+  TH1D *h1_pred = new TH1D("h1_pred", "", rows, 0, rows);
+  TH1D *h1_meas2pred = new TH1D(TString::Format("h1_meas2pred_%d", index), "", rows, 0, rows);
+  TH1D *h1_meas2pred_syst = new TH1D(TString::Format("h1_meas2pred_syst_%d", index), "", rows, 0, rows);
+  
+  TH1D *h1_lambda_pred = new TH1D(TString::Format("h1_lambda_pred_%d", index), "", rows, 0, rows);
+  TH1D *h1_lambda_meas = new TH1D(TString::Format("h1_lambda_meas_%d", index), "", rows, 0, rows);
+  TH1D *h1_lambda_absigma_dis = new TH1D(TString::Format("h1_lambda_absigma_dis_%d", index), "", 10, 0, 10);
+  TH1D *h1_lambda_sigma_iii = new TH1D(TString::Format("h1_lambda_sigma_iii_%d", index), "", rows, 0, rows);
+
+  for(int ibin=1; ibin<=rows; ibin++) {
+    double pred_val = matrix_pred_temp(0, ibin-1);
+    double pred_err = sqrt( matrix_total_cov(ibin-1, ibin-1) );
+    double meas_val = matrix_meas_temp(0, ibin-1);
+    double meas2pred_val = 0;
+    if( pred_val!=0 ) {
+      h1_meas2pred->SetBinContent(ibin, meas_val/pred_val);
+      h1_meas2pred->SetBinError(ibin, sqrt(meas_val)/pred_val);
+      h1_meas2pred_syst->SetBinContent(ibin, 1);
+      h1_meas2pred_syst->SetBinError(ibin, pred_err/pred_val);
+    }
+    
+    double pred_lambda_val = matrix_lambda_pred(0, ibin-1);
+    double pred_lambda_err = sqrt( matrix_cov_lambda(ibin-1, ibin-1) );
+    double meas_lambda_val = matrix_lambda_meas(0, ibin-1);
+    double delta_lambda_val = matrix_delta_lambda(0, ibin-1);
+    double relerr_lambda = delta_lambda_val/pred_lambda_err;
+
+    gh_fake_meas->SetPoint( ibin-1, h1_fake_meas->GetBinCenter(ibin), meas_val );
+    gh_fake_meas->SetPointError( ibin-1, h1_fake_meas->GetBinWidth(ibin)*0.5, sqrt(meas_val) );
+    h1_fake_meas->SetBinContent( ibin, meas_val );
+    h1_pred->SetBinContent( ibin, pred_val );
+    h1_pred->SetBinError( ibin, pred_err );
+
+    h1_lambda_pred->SetBinContent( ibin, pred_lambda_val );
+    h1_lambda_pred->SetBinError( ibin, pred_lambda_err );
+    h1_lambda_meas->SetBinContent( ibin, meas_lambda_val );
+    
+    if( fabs(relerr_lambda)>=10 ) h1_lambda_absigma_dis->Fill( 9.5 );
+    else h1_lambda_absigma_dis->Fill( fabs(relerr_lambda) );
+
+    double edge_val = 6;
+    double mod_relerr_lambda = relerr_lambda;
+    if( fabs(relerr_lambda)>edge_val ) {
+      (relerr_lambda>0) ? (mod_relerr_lambda = edge_val) : (mod_relerr_lambda = edge_val*(-1));
+    }
+    h1_lambda_sigma_iii->SetBinContent( ibin, mod_relerr_lambda );
+    
+  }
+
+  /////////////////////////////////////////////////////////////
+
+  double lambda_sigma_11 = h1_lambda_absigma_dis->GetBinContent( 1 );
+  double lambda_sigma_12 = h1_lambda_absigma_dis->GetBinContent( 2 );
+  double lambda_sigma_23 = h1_lambda_absigma_dis->GetBinContent( 3 );
+  double lambda_sigma_3p = h1_lambda_absigma_dis->Integral(4, 10);
+
+  const int user_num = 4;
+  double array_user_meas[user_num] = { lambda_sigma_11, lambda_sigma_12, lambda_sigma_23, lambda_sigma_3p };
+  double array_user_pred[user_num] = {0};
+  double array_user_prob[user_num] = {1-0.3173, 0.3173-0.0455, 0.0455-0.0027, 0.0027};
+  for(int idx=0; idx<user_num; idx++) {
+    array_user_pred[idx] = rows * array_user_prob[idx];
+  }
+
+  double chi2_user[user_num] = {0};
+
+  for(int idx=0; idx<user_num; idx++) {
+    
+    double meas = array_user_meas[idx];
+    double pred = array_user_pred[idx];
+
+    double chi2_sub = 0;
+    if( meas==0 ) chi2_sub = 2*pred;
+    else chi2_sub = 2*( pred - meas + meas * log(meas/pred) );
+    
+    if( idx<1 ) chi2_user[0] += chi2_sub;
+    if( idx<2 ) chi2_user[1] += chi2_sub;
+    if( idx<3 ) chi2_user[2] += chi2_sub;
+    if( idx<4 ) chi2_user[3] += chi2_sub;    
+  }
+
+  cout<<endl;
+  double user_pValue[user_num] = {0};
+  for(int idx=0; idx<user_num; idx++) {
+    user_pValue[idx] = TMath::Prob( chi2_user[idx], idx+1 );
+    cout<<TString::Format(" ---> check user_pValue: chi2/ndf = %3.2f/%d, pValue %8.6f", chi2_user[idx], idx+1, user_pValue[idx])<<endl;
+  }
+  cout<<endl;
+  
+  
+  /////////////////////////////////////////////////////////////
+  
+  roostr = TString::Format("canv_h1_fake_meas_%d", index);  
+  TCanvas *canv_h1_fake_meas = new TCanvas(roostr, roostr, 1000, 950);
+  //func_canv_margin(canv_h1_fake_meas, 0.15, 0.1, 0.1, 0.15);
+
+  /////////////
+  canv_h1_fake_meas->cd();
+  TPad *pad_top_no = new TPad("pad_top_no", "pad_top_no", 0, 0.45, 1, 1);
+  func_canv_margin(pad_top_no, 0.15, 0.1, 0.1, 0.05);
+  pad_top_no->Draw(); pad_top_no->cd();
+  
+  TH1D *h1_pred_clone = (TH1D*)h1_pred->Clone(TString::Format("h1_pred_clone_%d", index));
+  h1_pred_clone->Draw("e2"); h1_pred_clone->SetMinimum(0);
+  if( h1_pred_clone->GetMaximum() < h1_fake_meas->GetMaximum() ) h1_pred_clone->SetMaximum( h1_fake_meas->GetMaximum() * 1.1 );
+  h1_pred_clone->SetFillColor(kRed-10); h1_pred_clone->SetFillStyle(1001);
+  h1_pred_clone->SetMarkerSize(0);
+  h1_pred_clone->SetLineColor(kRed);
+  h1_pred_clone->GetXaxis()->SetLabelColor(10);
+  func_xy_title(h1_pred_clone, "Bin index", "Entries"); func_title_size(h1_pred_clone, 0.065, 0.065, 0.065, 0.065);
+  h1_pred_clone->GetXaxis()->CenterTitle(); h1_pred_clone->GetYaxis()->CenterTitle();
+  h1_pred_clone->GetYaxis()->SetTitleOffset(1.2); 
+
+  h1_pred->Draw("hist same"); h1_pred->SetLineColor(color_pred);
+
+  gh_fake_meas->Draw("same p");
+  gh_fake_meas->SetMarkerStyle(20); gh_fake_meas->SetMarkerSize(1.2);
+  gh_fake_meas->SetMarkerColor(color_meas); gh_fake_meas->SetLineColor(color_meas);
+
+  h1_pred_clone->Draw("same axis");
+    
+  TLegend *lg_chi2_toy = new TLegend(0.17+0.03, 0.6, 0.4+0.04, 0.85);    
+  lg_chi2_toy->AddEntry(gh_fake_meas, TString::Format("#color[%d]{Fake data}", color_meas), "lep");
+  lg_chi2_toy->AddEntry(h1_pred_clone, TString::Format("#color[%d]{Prediction}", color_pred), "fl");
+  lg_chi2_toy->AddEntry("", TString::Format("#color[%d]{#chi^{2}/ndf: %4.1f/%d}", color_pred, chi2, rows), "");
+  lg_chi2_toy->Draw();
+  lg_chi2_toy->SetBorderSize(0); lg_chi2_toy->SetFillStyle(0); lg_chi2_toy->SetTextSize(0.08);
+
+  /////////////
+  canv_h1_fake_meas->cd();
+  TPad *pad_bot_no = new TPad("pad_bot_no", "pad_bot_no", 0, 0, 1, 0.45);
+  func_canv_margin(pad_bot_no, 0.15, 0.1, 0.05, 0.3);
+  pad_bot_no->Draw(); pad_bot_no->cd();
+  
+  h1_meas2pred_syst->Draw("e2");
+  h1_meas2pred_syst->SetMinimum(0); h1_meas2pred_syst->SetMaximum(2);
+  h1_meas2pred_syst->SetFillColor(kRed-10); h1_meas2pred_syst->SetFillStyle(1001); h1_meas2pred_syst->SetMarkerSize(0);
+  func_title_size(h1_meas2pred_syst, 0.078, 0.078, 0.078, 0.078);
+  func_xy_title(h1_meas2pred_syst, "Measured bin index", "Data / Pred");
+  h1_meas2pred_syst->GetXaxis()->SetTickLength(0.05);  h1_meas2pred_syst->GetXaxis()->SetLabelOffset(0.005);
+  h1_meas2pred_syst->GetXaxis()->CenterTitle(); h1_meas2pred_syst->GetYaxis()->CenterTitle(); 
+  h1_meas2pred_syst->GetYaxis()->SetTitleOffset(0.99);
+  h1_meas2pred_syst->GetYaxis()->SetNdivisions(509);
+
+  ff_1->Draw("same");
+  
+  h1_meas2pred->Draw("same e1");
+  h1_meas2pred->SetLineColor(color_meas);
+  //h1_meas2pred->SetMarkerSytle(20); h1_meas2pred->SetMarkerSize(1.2); h1_meas2pred->SetMarkerColor(color_meas); 
+
+  if( saveFIG ) {
+    roostr = TString::Format("canv_h1_fake_meas_%d.png", index);  
+    canv_h1_fake_meas->SaveAs(roostr);
+  }
+    
+  /////////////////////////////////////////////////////////////
+
+  roostr = TString::Format("canv_h1_lambda_pred_%d", index);
+  TCanvas *canv_h1_lambda_pred = new TCanvas(roostr, roostr, 900, 650);
+  func_canv_margin(canv_h1_lambda_pred, 0.15, 0.1, 0.1, 0.15);
+    
+  TH1D *h1_lambda_pred_clone = (TH1D*)h1_lambda_pred->Clone("h1_lambda_pred_clone");
+  h1_lambda_pred_clone->Draw("e2");
+  //h1_lambda_pred_clone->SetMinimum(0);
+  if( h1_lambda_pred_clone->GetMaximum()<h1_lambda_meas->GetMaximum() ) h1_lambda_pred_clone->SetMaximum (h1_lambda_meas->GetMaximum() * 1.1 );
+  h1_lambda_pred_clone->SetFillColor(kRed-10); h1_lambda_pred_clone->SetFillStyle(1001);
+  h1_lambda_pred_clone->SetMarkerSize(0);
+  h1_lambda_pred_clone->SetLineColor(color_pred);
+  func_xy_title(h1_lambda_pred_clone, "Decomposed bin index", "Entries\'");
+  func_title_size(h1_lambda_pred_clone, 0.05, 0.05, 0.05, 0.05);
+  h1_lambda_pred_clone->GetXaxis()->CenterTitle(); h1_lambda_pred_clone->GetYaxis()->CenterTitle();
+  h1_lambda_pred_clone->GetYaxis()->SetTitleOffset(1.5); 
+
+  h1_lambda_pred->Draw("hist same"); h1_lambda_pred->SetLineColor(color_pred);
+
+  h1_lambda_meas->Draw("same p");
+  h1_lambda_meas->SetMarkerStyle(20); h1_lambda_meas->SetMarkerSize(1.2); h1_lambda_meas->SetMarkerColor(color_meas);
+  h1_lambda_meas->SetLineColor(color_meas);    
+
+  h1_lambda_pred_clone->Draw("same axis");   
+
+  if( saveFIG ) {
+    roostr = TString::Format("canv_h1_lambda_pred_%d.png", index);
+    canv_h1_lambda_pred->SaveAs(roostr);
+  }
+    
+  /////////////////////////////////////////////////////////////
+
+  roostr = TString::Format("canv_lambda_sigma_%d", index);
+  TCanvas *canv_lambda_sigma = new TCanvas(roostr, roostr, 900, 650);
+  func_canv_margin(canv_lambda_sigma, 0.15, 0.1, 0.1, 0.15);
+    
+  TH1D *h1_lambda_sigmax3 = new TH1D(TString::Format("h1_lambda_sigmax3_%d", index), "", rows, 0, rows);
+  for(int ibin=1; ibin<=rows; ibin++) h1_lambda_sigmax3->SetBinError(ibin, 3);
+  
+  TH1D *h1_lambda_sigmax2 = new TH1D(TString::Format("h1_lambda_sigmax2_%d", index), "", rows, 0, rows);
+  for(int ibin=1; ibin<=rows; ibin++) h1_lambda_sigmax2->SetBinError(ibin, 2);
+  
+  TH1D *h1_lambda_sigmax1 = new TH1D(TString::Format("h1_lambda_sigmax1_%d", index), "", rows, 0, rows);
+  for(int ibin=1; ibin<=rows; ibin++) h1_lambda_sigmax1->SetBinError(ibin, 1);
+  
+  h1_lambda_sigmax3->Draw("e2");
+  h1_lambda_sigmax3->SetMinimum(-6);
+  h1_lambda_sigmax3->SetMaximum(6);
+  h1_lambda_sigmax3->SetFillColor(kRed-9); h1_lambda_sigmax3->SetFillStyle(1001);
+  h1_lambda_sigmax3->SetMarkerSize(0);
+  h1_lambda_sigmax3->SetLineColor(color_pred);
+  func_xy_title(h1_lambda_sigmax3, "Decomposed bin index", "#sigma_{i}\' value");
+  func_title_size(h1_lambda_sigmax3, 0.05, 0.05, 0.05, 0.05);
+  h1_lambda_sigmax3->GetXaxis()->CenterTitle(); h1_lambda_sigmax3->GetYaxis()->CenterTitle();
+  h1_lambda_sigmax3->GetYaxis()->SetTitleOffset(1.2); 
+  h1_lambda_sigmax3->GetYaxis()->SetNdivisions(112);
+
+  h1_lambda_sigmax2->Draw("same e2"); h1_lambda_sigmax2->SetMarkerSize(0);
+  h1_lambda_sigmax2->SetFillColor(kYellow); h1_lambda_sigmax2->SetFillStyle(1001);
+
+  h1_lambda_sigmax1->Draw("same e2"); h1_lambda_sigmax1->SetMarkerSize(0);
+  h1_lambda_sigmax1->SetFillColor(kGreen); h1_lambda_sigmax1->SetFillStyle(1001);
+
+  h1_lambda_sigma_iii->Draw("same p");
+  h1_lambda_sigma_iii->SetMarkerSize(1.4); h1_lambda_sigma_iii->SetMarkerStyle(21); h1_lambda_sigma_iii->SetMarkerColor(color_meas);
+    
+  ff_0->Draw("same");
+  
+  h1_lambda_sigmax2->Draw("same axis");
+  
+  TLegend *lg_lambda_sigma = new TLegend(0.35, 0.65+0.065, 0.7, 0.89+0.065);
+  lg_lambda_sigma->AddEntry("", TString::Format("#color[%d]{Total num: %d}", kBlue, rows), "");
+  lg_lambda_sigma->AddEntry("", TString::Format("#color[%d]{|#sigma_{i}\'| #in (1, 2]: %1.0f, expect. %3.2f}",
+						kBlue, lambda_sigma_12, rows*0.2718), "");
+  lg_lambda_sigma->AddEntry("", TString::Format("#color[%d]{|#sigma_{i}\'| #in (2, 3]: %1.0f, expect. %3.2f}",
+						kBlue, lambda_sigma_23, rows*0.0428), "");
+  lg_lambda_sigma->AddEntry("", TString::Format("#color[%d]{|#sigma_{i}\'| > 3: %1.0f, expect. %3.2f}",
+						kBlue, lambda_sigma_3p, rows*0.0027), "");  
+  lg_lambda_sigma->Draw();
+  lg_lambda_sigma->SetBorderSize(0); lg_lambda_sigma->SetFillStyle(0); lg_lambda_sigma->SetTextSize(0.05);
+
+  if( saveFIG ) {
+    roostr = TString::Format("canv_lambda_sigma_%d.png", index);
+    canv_lambda_sigma->SaveAs(roostr);
+  }
+
+  /////////////////////////////////    
+    
+  roostr = TString::Format("h2_lambda_transform_matrix_%d", index);
+  TH2D *h2_lambda_transform_matrix = new TH2D(roostr, "", rows, 0, rows, rows, 0, rows);
+  for(int ibin=1; ibin<=rows; ibin++) {
+    for(int jbin=1; jbin<=rows; jbin++) {
+      double value = matrix_eigenvector(ibin-1, jbin-1);
+      h2_lambda_transform_matrix->SetBinContent(ibin, jbin, value);
+    }
+  }
+
+  roostr = TString::Format("canv_h2_lambda_transform_matrix_%d", index);
+  TCanvas *canv_h2_lambda_transform_matrix = new TCanvas(roostr, roostr, 900, 850);
+  func_canv_margin(canv_h2_lambda_transform_matrix, 0.15, 0.2,0.15,0.2);
+  h2_lambda_transform_matrix->Draw("colz");
+  func_xy_title(h2_lambda_transform_matrix, "Measured bin index", "Decomposed bin index");
+  func_title_size(h2_lambda_transform_matrix, 0.05, 0.05, 0.05, 0.05);
+  h2_lambda_transform_matrix->GetXaxis()->CenterTitle(); h2_lambda_transform_matrix->GetYaxis()->CenterTitle();
+  if( saveFIG ) {
+    roostr = TString::Format("canv_h2_lambda_transform_matrix_%d.png", index);
+    canv_h2_lambda_transform_matrix->SaveAs(roostr);
+  }
+}
 
 /////////////////////// ccc
 
 double TCN::GetChi2(TMatrixD matrix_pred_temp, TMatrixD matrix_meas_temp, TMatrixD matrix_syst_abscov_temp)
 {
-
   double chi2 = 0;
   
   TMatrixD matrix_delta = matrix_pred_temp - matrix_meas_temp;
   TMatrixD matrix_delta_T = matrix_delta.T(); matrix_delta.T(); 
 
   int rows = matrix_pred_temp.GetNcols();
+  
   TMatrixD matrix_stat_cov(rows, rows);
-  for(int idx=0; idx<rows; idx++) {
-    matrix_stat_cov(idx, idx) = matrix_pred_temp(0, idx);
-  }
+  for(int idx=0; idx<rows; idx++) matrix_stat_cov(idx, idx) = matrix_pred_temp(0, idx);
 
-  TMatrixD matrix_total_cov(rows, rows);
-  matrix_total_cov = matrix_syst_abscov_temp + matrix_stat_cov;
-
-  TMatrixD matrix_total_cov_inv = matrix_total_cov;
-  matrix_total_cov_inv.Invert();
-
+  TMatrixD matrix_total_cov(rows, rows); matrix_total_cov = matrix_syst_abscov_temp + matrix_stat_cov;
+  TMatrixD matrix_total_cov_inv = matrix_total_cov; matrix_total_cov_inv.Invert();
   chi2 = ( matrix_delta*matrix_total_cov_inv*matrix_delta_T )(0,0);
   
   return chi2;  
@@ -135,18 +449,11 @@ void TCN::ProduceVariation(int ntoys, bool flag_norm)
 
   map_toy_meas.clear();
 
-
   cout<<endl<<" ---> Check, producing toys"<<endl<<endl;
     
-  TMatrixD matrix_stat_abscov(BINS, BINS);
-  for(int idx=0; idx<BINS; idx++) matrix_stat_abscov(idx, idx) = matrix_pred(0, idx);
+  TMatrixD matrix_stat_abscov(BINS, BINS); for(int idx=0; idx<BINS; idx++) matrix_stat_abscov(idx, idx) = matrix_pred(0, idx);
+  TMatrixD matrix_total_abscov(BINS, BINS); matrix_total_abscov = matrix_stat_abscov + matrix_syst_abscov;
 
-  TMatrixD matrix_total_abscov(BINS, BINS);
-  matrix_total_abscov = matrix_stat_abscov + matrix_syst_abscov;
-
-  // for(int idx=0; idx<BINS; idx++)
-  //   cout<<" ---> check "<<idx+1<<"\t"<<matrix_pred(0, idx)<<"\t"<<sqrt( matrix_total_abscov(idx, idx) )<<endl;
-    
   ////////////////////////////////
     
   TMatrixDSym DSmatrix_cov(BINS);
@@ -164,7 +471,6 @@ void TCN::ProduceVariation(int ntoys, bool flag_norm)
     
   for(int itoy=1; itoy<=TOYS; itoy++) {    
     TMatrixD matrix_element(BINS, 1);
-
     // double *array_obj_total = new double[BINS];
       
     for(int idx=0; idx<BINS; idx++) {
@@ -311,8 +617,7 @@ void TCN::Initialization(bool flag_norm)
     // canv_h2_gof_correlation->SaveAs("canv_h2_gof_correlation.png");
       
   }// else of if( FLAG_NORM )
-  
-  
+    
 }
 
 
@@ -339,7 +644,7 @@ void read_obj()
   gStyle->SetMarkerStyle(20);
   gStyle->SetMarkerSize(1.2);
   gStyle->SetEndErrorSize(4);
-  gStyle->SetEndErrorSize(2);
+  gStyle->SetEndErrorSize(0);
 
   TString roostr = "";
   
@@ -357,315 +662,27 @@ void read_obj()
     testcn->SetMeas2Use();
     double chi2_meas = testcn->GetChi2( testcn->matrix_pred, testcn->matrix_fake_meas, testcn->matrix_syst_abscov );
     cout<<endl<<" ---> check chi2_meas: "<<chi2_meas<<endl<<endl;
+    
+    TMatrixD matrix_meas_temp = testcn->matrix_fake_meas;    
+    testcn->Plotting_singlecase(testcn->matrix_pred, matrix_meas_temp, testcn->matrix_syst_abscov, 1, 1);
   }
 
-  int ntoys = 10000;
-  testcn->ProduceVariation( ntoys, flag_norm );
-  for(int idx=1; idx<=100; idx++) {
-    testcn->SetToy(idx);
-    double chi2 = testcn->GetChi2( testcn->matrix_pred, testcn->matrix_fake_meas, testcn->matrix_syst_abscov );
-    //cout<<TString::Format(" ---> itoy %4d, chi2 %7.2f", idx, chi2)<<endl;
-  }
+  if( 0 ) {
+    int ntoys = 100;
+    testcn->ProduceVariation( ntoys, flag_norm );
+    for(int idx=1; idx<=100; idx++) {
+      testcn->SetToy(idx);
+      double chi2 = testcn->GetChi2( testcn->matrix_pred, testcn->matrix_fake_meas, testcn->matrix_syst_abscov );
+      //cout<<TString::Format(" ---> itoy %4d, chi2 %7.2f", idx, chi2)<<endl;
+    }
 
-  if( 1 ) {
     int itoy = 90;
-   
-    TMatrixD matrix_toy_syst_abscov = testcn->matrix_syst_abscov ;
-    int rows = matrix_toy_syst_abscov.GetNrows();
-    
-    TMatrixD matrix_toy_pred = testcn->matrix_pred;
-    TMatrixD matrix_toy_meas(1, rows);
-    
-    TH1D *h1_fake_meas = new TH1D("h1_fake_meas", "", rows, 0, rows);
-    TGraphErrors *gh_fake_meas = new TGraphErrors();
-    TH1D *h1_pred = new TH1D("h1_pred", "", rows, 0, rows);
-    
-    for(int ibin=1; ibin<=rows; ibin++) {
+    testcn->SetToy(itoy);    
+    TMatrixD matrix_meas_temp = testcn->matrix_fake_meas;    
+    testcn->Plotting_singlecase(testcn->matrix_pred, matrix_meas_temp, testcn->matrix_syst_abscov, 1, 101);
+  }
 
-      double scaleF_meas = 1;
-      
-      double val_fake_meas = testcn->map_toy_meas[itoy][ibin] * scaleF_meas;
-      
-      ///////
-      matrix_toy_meas(0, ibin-1) = val_fake_meas;
-
-      ///////
-      h1_fake_meas->SetBinContent(ibin, val_fake_meas);
-      gh_fake_meas->SetPoint( ibin-1, h1_fake_meas->GetBinCenter(ibin), val_fake_meas );
-      gh_fake_meas->SetPointError( ibin-1, 0, sqrt(val_fake_meas) );      
-      
-      h1_pred->SetBinContent( ibin, testcn->matrix_pred(0, ibin-1) );
-      h1_pred->SetBinError( ibin, sqrt(testcn->matrix_syst_abscov(ibin-1, ibin-1)) );
-    }
-    
-    double chi2 = testcn->GetChi2( matrix_toy_pred, matrix_toy_meas, matrix_toy_syst_abscov );
-    cout<<endl<<TString::Format(" ---> check itoy %4d, chi2 %7.2f", itoy, chi2)<<endl<<endl;
-    
-    roostr = "canv_h1_fake_meas";
-    TCanvas *canv_h1_fake_meas = new TCanvas(roostr, roostr, 900, 650);
-    func_canv_margin(canv_h1_fake_meas, 0.15, 0.1, 0.1, 0.15);
-    
-    TH1D *h1_pred_clone = (TH1D*)h1_pred->Clone("h1_pred_clone");
-    h1_pred_clone->Draw("e2");
-    h1_pred_clone->SetMinimum(0);
-    if( h1_pred_clone->GetMaximum() < h1_fake_meas->GetMaximum() ) {
-      h1_pred_clone->SetMaximum( h1_fake_meas->GetMaximum() * 1.1 );
-    }
-    h1_pred_clone->SetFillColor(kRed); h1_pred_clone->SetFillStyle(3005);
-    h1_pred_clone->SetMarkerSize(0);
-    h1_pred_clone->SetLineColor(kRed);
-    func_xy_title(h1_pred_clone, "Bin index", "Entries");
-    func_title_size(h1_pred_clone, 0.05, 0.05, 0.05, 0.05);
-    h1_pred_clone->GetXaxis()->CenterTitle(); h1_pred_clone->GetYaxis()->CenterTitle();
-    h1_pred_clone->GetYaxis()->SetTitleOffset(1.5); 
-
-    h1_pred->Draw("hist same");
-    h1_pred->SetLineColor(kRed);
-
-    gh_fake_meas->Draw("same p");
-    gh_fake_meas->SetMarkerStyle(20);
-    gh_fake_meas->SetMarkerSize(1.1);
-    gh_fake_meas->SetMarkerColor(kBlack);
-    gh_fake_meas->SetLineColor(kBlack);
-
-    h1_pred_clone->Draw("same axis");
-    
-    TLegend *lg_chi2_toy = new TLegend(0.17, 0.65, 0.4, 0.85);    
-    lg_chi2_toy->AddEntry(gh_fake_meas, TString::Format("#color[%d]{Fake data}", kBlack), "p");
-    lg_chi2_toy->AddEntry(h1_pred_clone, TString::Format("#color[%d]{Prediction}", kRed), "fl");
-    lg_chi2_toy->AddEntry("", TString::Format("#color[%d]{#chi^{2}/ndf: %4.1f/%d}", kRed, chi2, rows), "");
-    lg_chi2_toy->Draw();
-    lg_chi2_toy->SetBorderSize(0); lg_chi2_toy->SetFillStyle(0); lg_chi2_toy->SetTextSize(0.065);
-
-    canv_h1_fake_meas->SaveAs("canv_h1_fake_meas.png");
-
-    ///////////////////////////////////////////////////////////
-
-    TMatrixD matrix_stat_abscov(rows, rows);
-    for(int idx=0; idx<rows; idx++) matrix_stat_abscov(idx, idx) = matrix_toy_pred(0, idx);
-
-    TMatrixD matrix_total_abscov(rows, rows);
-    matrix_total_abscov = matrix_stat_abscov + matrix_toy_syst_abscov;
-
-    TMatrixDSym DSmatrix_cov(rows);
-    for(int ibin=0; ibin<rows; ibin++) {
-      for(int jbin=0; jbin<rows; jbin++) {
-	DSmatrix_cov(ibin, jbin) = matrix_total_abscov(ibin, jbin);
-      }
-    }
-    TMatrixDSymEigen DSmatrix_eigen( DSmatrix_cov );
-    TMatrixD matrix_eigenvector = DSmatrix_eigen.GetEigenVectors();
-    TVectorD matrix_eigenvalue = DSmatrix_eigen.GetEigenValues();
-
-    TMatrixD matrix_eigenvector_T = matrix_eigenvector.T(); matrix_eigenvector.T();
-    // TMatrixD matrix_eigenvector_IT = matrix_eigenvector * matrix_eigenvector_T;// --> unit matrix
-    // TCanvas *canv_check_matrix_eigenvalue = new TCanvas("canv_check_matrix_eigenvalue", "canv_check_matrix_eigenvalue", 900, 650);
-    // matrix_eigenvector_IT.Draw("colz");
-    // TMatrixD matrix_lambda = matrix_eigenvector_T * matrix_total_abscov * matrix_eigenvector;
-    // for(int idx=0; idx<rows; idx++) cout<<idx<<"\t"<<matrix_lambda(idx, idx)<<"\t"<<matrix_eigenvalue(idx)<<endl;
-
-    TMatrixD matrix_delta = matrix_toy_pred - matrix_toy_meas;
-    TMatrixD matrix_delta_lambda = matrix_delta * matrix_eigenvector;
-    TMatrixD matrix_delta_lambda_T = matrix_delta_lambda.T(); matrix_delta_lambda.T();
-
-    TMatrixD matrix_cov_lambda(rows, rows);
-    for(int idx=0; idx<rows; idx++) matrix_cov_lambda(idx, idx) = matrix_eigenvalue(idx);
-    TMatrixD matrix_cov_lambda_inv = matrix_cov_lambda;
-    matrix_cov_lambda_inv.Invert();
-    
-    double chi2_lambda = (matrix_delta_lambda * matrix_cov_lambda_inv * matrix_delta_lambda_T)(0,0);
-    cout<<endl<<TString::Format(" ---> check itoy %4d, chi2_lambda %7.2f", itoy, chi2_lambda)<<endl<<endl;
-
-    /////////////////////////////////
-
-    TMatrixD matrix_lambda_pred = matrix_toy_pred * matrix_eigenvector;
-    TMatrixD matrix_lambda_meas = matrix_toy_meas * matrix_eigenvector;
-
-    roostr = "h1_lambda_pred";
-    TH1D *h1_lambda_pred = new TH1D(roostr, "", rows, 0, rows);
-    TGraph *gh_lambda_meas = new TGraph();
-
-    ////////
-    
-    int color_meas_100 = kBlack;
-    int color_meas_50 = kGreen + 1;
-    int color_meas_10 = kBlue;
-    
-    roostr = "h1_lambda_meas_100"; TH1D *h1_lambda_meas_100 = new TH1D(roostr, roostr, rows, 0, rows);
-    TMatrixD matrix_lambda_meas_100(1, rows);
-    for(int idx=0; idx<rows; idx++) matrix_lambda_meas_100(0, idx) = testcn->map_toy_meas[itoy][idx+1] * 1;
-    matrix_lambda_meas_100 = matrix_lambda_meas_100 * matrix_eigenvector;
-    for(int idx=0; idx<rows; idx++) h1_lambda_meas_100->SetBinContent( idx+1, matrix_lambda_meas_100(0, idx) );
-    h1_lambda_meas_100->SetLineColor(color_meas_100);
-      
-    roostr = "h1_lambda_meas_50"; TH1D *h1_lambda_meas_50 = new TH1D(roostr, roostr, rows, 0, rows);
-    TMatrixD matrix_lambda_meas_50(1, rows);
-    for(int idx=0; idx<rows; idx++) matrix_lambda_meas_50(0, idx) = testcn->map_toy_meas[itoy][idx+1] * 0.5;
-    matrix_lambda_meas_50 = matrix_lambda_meas_50 * matrix_eigenvector;
-    for(int idx=0; idx<rows; idx++) h1_lambda_meas_50->SetBinContent( idx+1, matrix_lambda_meas_50(0, idx) );
-    h1_lambda_meas_50->SetLineColor(color_meas_50);
-
-    roostr = "h1_lambda_meas_10"; TH1D *h1_lambda_meas_10 = new TH1D(roostr, roostr, rows, 0, rows);
-    TMatrixD matrix_lambda_meas_10(1, rows);
-    for(int idx=0; idx<rows; idx++) matrix_lambda_meas_10(0, idx) = testcn->map_toy_meas[itoy][idx+1] * 0.1;
-    matrix_lambda_meas_10 = matrix_lambda_meas_10 * matrix_eigenvector;
-    for(int idx=0; idx<rows; idx++) h1_lambda_meas_10->SetBinContent( idx+1, matrix_lambda_meas_10(0, idx) );
-    h1_lambda_meas_10->SetLineColor(color_meas_10);
-
-    roostr = "h1_lambda_meas_diff_100"; TH1D *h1_lambda_meas_diff_100 = new TH1D(roostr, "", rows, 0, rows);
-    h1_lambda_meas_diff_100->SetLineColor(color_meas_100);    
-    roostr = "h1_lambda_meas_diff_50"; TH1D *h1_lambda_meas_diff_50 = new TH1D(roostr, "", rows, 0, rows);
-    h1_lambda_meas_diff_50->SetLineColor(color_meas_50);    
-    roostr = "h1_lambda_meas_diff_10"; TH1D *h1_lambda_meas_diff_10 = new TH1D(roostr, "", rows, 0, rows);
-    h1_lambda_meas_diff_10->SetLineColor(color_meas_10);
-    for(int ibin=1; ibin<=rows; ibin++) {
-      double val_pred = matrix_lambda_pred(0, ibin-1);
-      double val_err = sqrt( matrix_cov_lambda(ibin-1, ibin-1) );
-      
-      double val_meas_100 = h1_lambda_meas_100->GetBinContent(ibin);
-      double val_meas_50 = h1_lambda_meas_50->GetBinContent(ibin);
-      double val_meas_10 = h1_lambda_meas_10->GetBinContent(ibin);
-
-      h1_lambda_meas_diff_100->SetBinContent(ibin, (val_meas_100-val_pred)/val_err);
-      h1_lambda_meas_diff_50->SetBinContent(ibin, (val_meas_50-val_pred)/val_err);
-      h1_lambda_meas_diff_10->SetBinContent(ibin, (val_meas_10-val_pred)/val_err);      
-    }
-    
-    ////////
-    
-    for(int idx=0; idx<rows; idx++) {
-      double val_pred = matrix_lambda_pred(0, idx);
-      double val_meas = matrix_lambda_meas(0, idx);
-      double val_sigma = sqrt( matrix_cov_lambda(idx, idx) );
-
-      h1_lambda_pred->SetBinContent(idx+1, val_pred);
-      h1_lambda_pred->SetBinError(idx+1, val_sigma);
-
-      gh_lambda_meas->SetPoint( idx, h1_lambda_pred->GetBinCenter(idx+1), val_meas );
-    }
-    
-    roostr = "canv_h1_lambda_pred";
-    TCanvas *canv_h1_lambda_pred = new TCanvas(roostr, roostr, 900, 650);
-    func_canv_margin(canv_h1_lambda_pred, 0.15, 0.1, 0.1, 0.15);
-    
-    TH1D *h1_lambda_pred_clone = (TH1D*)h1_lambda_pred->Clone("h1_lambda_pred_clone");
-    h1_lambda_pred_clone->Draw("e2");
-    //h1_lambda_pred_clone->SetMinimum(0);
-    h1_lambda_pred_clone->SetFillColor(kRed-10); h1_lambda_pred_clone->SetFillStyle(1001);
-    h1_lambda_pred_clone->SetMarkerSize(0);
-    h1_lambda_pred_clone->SetLineColor(kRed);
-    func_xy_title(h1_lambda_pred_clone, "Bin index", "");
-    func_title_size(h1_lambda_pred_clone, 0.05, 0.05, 0.05, 0.05);
-    h1_lambda_pred_clone->GetXaxis()->CenterTitle(); h1_lambda_pred_clone->GetYaxis()->CenterTitle();
-    h1_lambda_pred_clone->GetYaxis()->SetTitleOffset(1.5); 
-
-    h1_lambda_pred->Draw("hist same");
-    h1_lambda_pred->SetLineColor(kRed);
-
-    gh_lambda_meas->Draw("same p");
-    gh_lambda_meas->SetMarkerStyle(20);
-    gh_lambda_meas->SetMarkerSize(1.1);
-    gh_lambda_meas->SetMarkerColor(kBlack);
-    gh_lambda_meas->SetLineColor(kBlack);    
-
-    h1_lambda_pred_clone->Draw("same axis");      
-
-
-    
-    roostr = "canv_h1_lambda_pred2";
-    TCanvas *canv_h1_lambda_pred2 = new TCanvas(roostr, roostr, 900, 650);
-    func_canv_margin(canv_h1_lambda_pred2, 0.15, 0.1, 0.1, 0.15);    
-    h1_lambda_pred_clone->Draw("e2");
-    h1_lambda_pred->Draw("same hist");      
-    h1_lambda_meas_100->Draw("same hist");
-    h1_lambda_meas_50->Draw("same hist");
-    h1_lambda_meas_10->Draw("same hist");
-    h1_lambda_pred_clone->Draw("same axis");
-    
-
-    
-    roostr = "canv_h1_lambda_meas_diff_100";
-    TCanvas *canv_h1_lambda_meas_diff_100 = new TCanvas(roostr, roostr, 900, 650);
-    func_canv_margin(canv_h1_lambda_meas_diff_100, 0.15, 0.1, 0.1, 0.15);   
-    h1_lambda_meas_diff_100->Draw("hist");
-    h1_lambda_meas_diff_100->SetMinimum(-6);
-    h1_lambda_meas_diff_100->SetMaximum(6);    
-    h1_lambda_meas_diff_100->SetMarkerSize(0);
-    func_xy_title(h1_lambda_meas_diff_100, "Bin index", "#sigma_{i}\' value");
-    func_title_size(h1_lambda_meas_diff_100, 0.05, 0.05, 0.05, 0.05);
-    h1_lambda_meas_diff_100->GetXaxis()->CenterTitle(); h1_lambda_meas_diff_100->GetYaxis()->CenterTitle();
-    h1_lambda_meas_diff_100->GetYaxis()->SetTitleOffset(1.5);
-
-    TF1 *ff_0 = new TF1("ff_100", "0", 0, 1e3); ff_0->Draw("same"); ff_0->SetLineColor(kGray+1); ff_0->SetLineStyle(7);
-    TF1 *ffp1 = new TF1("ff_100", "1", 0, 1e3); ffp1->Draw("same"); ffp1->SetLineColor(kGray+1); ffp1->SetLineStyle(7);
-    TF1 *ffm1 = new TF1("ff_100", "-1", 0, 1e3); ffm1->Draw("same"); ffm1->SetLineColor(kGray+1); ffm1->SetLineStyle(7);
-    TF1 *ffp3 = new TF1("ff_100", "3", 0, 1e3); ffp3->Draw("same"); ffp3->SetLineColor(kGray+1); ffp3->SetLineStyle(7);
-    TF1 *ffm3 = new TF1("ff_100", "-3", 0, 1e3); ffm3->Draw("same"); ffm3->SetLineColor(kGray+1); ffm3->SetLineStyle(7);
-    
-    h1_lambda_meas_diff_50->Draw("same hist");
-    h1_lambda_meas_diff_10->Draw("same hist");
-    
-    h1_lambda_meas_diff_100->Draw("same axis");
-      
-    /////////////////////////////////
-
-    roostr = "h1_relerr_lambda";
-    TH1D *h1_relerr_lambda = new TH1D(roostr, "", 10, 0, 10);
-    
-    double chi2_test = 0;
-    
-    for(int idx=0; idx<rows; idx++) {
-      
-      double val_delta = matrix_delta_lambda(0, idx);
-      double val_abserr= sqrt( matrix_cov_lambda(idx, idx) );
-      double val_relerr = fabs(val_delta)/val_abserr;
-      double val_relerr2 = val_relerr*val_relerr;      
-      chi2_test += val_relerr2;
-      
-      //cout<<TString::Format(" ---> ibin %3d, relerr %6.2f, relerr2 %6.2f", idx+1, val_relerr, val_relerr2)<<endl;
-
-      if( val_relerr<=9 ) h1_relerr_lambda->Fill( val_relerr );
-      else h1_relerr_lambda->Fill( 9.5 );
-      
-    }
-    cout<<endl;
-    
-    roostr = "canv_h1_relerr_lambda";
-    TCanvas *canv_h1_relerr_lambda = new TCanvas(roostr, roostr, 900, 650);
-    func_canv_margin(canv_h1_relerr_lambda, 0.15, 0.1, 0.1, 0.15);
-    
-    h1_relerr_lambda->Draw("hist text");
-    h1_relerr_lambda->SetLineWidth(4);
-    h1_relerr_lambda->SetMinimum(0);
-    h1_relerr_lambda->SetMarkerSize(3);
-    func_xy_title(h1_relerr_lambda, "#sigma_{i}\' value", "Entries");
-    func_title_size(h1_relerr_lambda, 0.05, 0.05, 0.05, 0.05);
-    h1_relerr_lambda->GetXaxis()->CenterTitle(); h1_relerr_lambda->GetYaxis()->CenterTitle();
-    h1_relerr_lambda->GetYaxis()->SetTitleOffset(1.5); 
-    h1_relerr_lambda->Draw("same axis");
-    
-    canv_h1_relerr_lambda->SaveAs("canv_h1_relerr_lambda.png");
-
-    /////////////////////////////////    
-    
-    roostr = "h2_lambda_transform_matrix";
-    TH2D *h2_lambda_transform_matrix = new TH2D(roostr, "", rows, 0, rows, rows, 0, rows);
-    for(int ibin=1; ibin<=rows; ibin++) {
-      for(int jbin=1; jbin<=rows; jbin++) {
-	double value = matrix_eigenvector(ibin-1, jbin-1);
-	h2_lambda_transform_matrix->SetBinContent(ibin, jbin, value);
-      }
-    }
-
-    roostr = "canv_h2_lambda_transform_matrix";
-    TCanvas *canv_h2_lambda_transform_matrix = new TCanvas(roostr, roostr, 900, 850);
-    func_canv_margin(canv_h2_lambda_transform_matrix, 0.15, 0.2,0.15,0.2);
-    h2_lambda_transform_matrix->Draw("colz");
-    func_xy_title(h2_lambda_transform_matrix, "Bin index", "Bin index");
-    h2_lambda_transform_matrix->GetXaxis()->CenterTitle(); h2_lambda_transform_matrix->GetYaxis()->CenterTitle();
-    canv_h2_lambda_transform_matrix->SaveAs("canv_h2_lambda_transform_matrix.png");
-      
-  }// if( 1 )
+  //////////////////////////////////////////////////////////////////////////////
   
   /*
   int ntoys = 100000;
@@ -685,12 +702,7 @@ void read_obj()
     double chi2 = testcn->GetChi2( testcn->matrix_pred, testcn->matrix_fake_meas, testcn->matrix_syst_abscov );
     h1_toy_chi2->Fill( chi2 );
   }
-
   h1_toy_chi2->Scale( 1./h1_toy_chi2->Integral() );
-  
-  // for(int ibin=1; ibin<=10; ibin++) {
-  //   cout<<" ---> check "<<ibin<<"\t"<<testcn->matrix_fake_meas(0, ibin-1)<<endl;
-  // }
   
   roostr = "canv_h1_toy_chi2";
   TCanvas *canv_h1_toy_chi2 = new TCanvas(roostr, roostr, 900, 650);
@@ -720,5 +732,5 @@ void read_obj()
   lg_chi2_toy->SetBorderSize(0); lg_chi2_toy->SetFillStyle(0); lg_chi2_toy->SetTextSize(0.065);
   
   canv_h1_toy_chi2->SaveAs("canv_h1_toy_chi2.png");
-  */ 
+  */
 }

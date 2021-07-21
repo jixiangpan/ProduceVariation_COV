@@ -355,7 +355,9 @@ void TCN::Plotting_decomposition(TMatrixD matrix_pred_temp, TMatrixD matrix_meas
   h1_pred->Draw("same hist"); h1_pred->SetLineColor(color_pred);
   //gh_meas->Draw("same p"); gh_meas->SetMarkerStyle(20); gh_meas->SetMarkerSize(1.2);
   //gh_meas->SetMarkerColor(color_meas); gh_meas->SetLineColor(color_meas);
-  h1_meas->Draw("same e1"); h1_meas->SetLineColor(color_meas);
+  h1_meas->SetLineColor(color_meas);
+  if( FLAG_INPUTFILE_COV_HAS_STAT ) h1_meas->Draw("same p");
+  else  h1_meas->Draw("same e1");
   h1_meas->SetMarkerStyle(20); h1_meas->SetMarkerColor(color_meas); h1_meas->SetMarkerSize(1.2);
   h1_pred_clone->Draw("same axis");
   
@@ -386,7 +388,9 @@ void TCN::Plotting_decomposition(TMatrixD matrix_pred_temp, TMatrixD matrix_meas
   
   ff_1->Draw("same");
   
-  h1_meas2pred->Draw("same e1"); h1_meas2pred->SetLineColor(color_meas);
+  h1_meas2pred->SetLineColor(color_meas);
+  if( FLAG_INPUTFILE_COV_HAS_STAT ) h1_meas2pred->Draw("same p");
+  else h1_meas2pred->Draw("same e1");  
   h1_meas2pred->SetMarkerStyle(20); h1_meas2pred->SetMarkerColor(color_meas); h1_meas2pred->SetMarkerSize(1.3);
   
   h1_meas2pred_syst->Draw("same axis");
@@ -424,7 +428,23 @@ void TCN::Plotting_decomposition(TMatrixD matrix_pred_temp, TMatrixD matrix_meas
   h1_lambda_pred_clone->GetYaxis()->SetTitleOffset(1.5);
 
   h1_lambda_pred->Draw("hist same"); h1_lambda_pred->SetLineColor(color_pred);
-
+  double ymin_h1_lambda_pred = 1e8;
+  double ymax_h1_lambda_pred = -1e8;
+  for(int ibin=1; ibin<=rows; ibin++) {    
+    double cv = h1_lambda_pred->GetBinContent( ibin );
+    double error = h1_lambda_pred->GetBinError( ibin );
+    if( ymin_h1_lambda_pred>cv-error ) ymin_h1_lambda_pred = cv-error;
+    if( ymax_h1_lambda_pred<cv+error ) ymax_h1_lambda_pred = cv+error;
+  }
+  if( ymin_h1_lambda_pred>h1_lambda_meas->GetMinimum() && h1_lambda_meas->GetMinimum()<0 )
+    h1_lambda_pred_clone->SetMinimum(h1_lambda_meas->GetMinimum()*1.1);
+  if( ymin_h1_lambda_pred>h1_lambda_meas->GetMinimum() && h1_lambda_meas->GetMinimum()>=0 )
+    h1_lambda_pred_clone->SetMinimum(h1_lambda_meas->GetMinimum()*0.9);
+  if( h1_lambda_meas->GetMaximum()>=0 && ymax_h1_lambda_pred<h1_lambda_meas->GetMaximum() )
+    h1_lambda_pred_clone->SetMaximum(h1_lambda_meas->GetMaximum()*1.1);
+  if( h1_lambda_meas->GetMaximum()<0 && ymax_h1_lambda_pred<h1_lambda_meas->GetMaximum() )
+    h1_lambda_pred_clone->SetMaximum(h1_lambda_meas->GetMaximum()*0.9);
+  
   h1_lambda_meas->Draw("same p");
   h1_lambda_meas->SetMarkerStyle(20); h1_lambda_meas->SetMarkerSize(1.2); h1_lambda_meas->SetMarkerColor(color_meas);
   h1_lambda_meas->SetLineColor(color_meas);    
@@ -642,10 +662,10 @@ void read_decomposition_lee()
   ////////////////////////////////////////////////////////////////////////////////////////
 
   TString roostr = "";
-
   
   TCN *testcn = new TCN();
-
+  //testcn->FLAG_INPUTFILE_COV_HAS_STAT = 1;
+  
   roostr = "file_numu.root";
   //roostr = "file_numuPC_phi.root";
   //roostr = "file_numu_vtxZ.root";
@@ -653,28 +673,27 @@ void read_decomposition_lee()
   //roostr = "file_user_Ehad_no.root";
   //roostr = "file_user_Ehad_wi.root";
   //roostr = "file_user_Ehad70_no.root";
-  //roostr = "file_user_Ehad70_wi.root";
+  // roostr = "file_user_Ehad70_wi.root";
   //roostr = "file_user_Ehad75_wi.root";
   //roostr = "file_user_Ehad80_wi.root";
-  //roostr = "file_user_Ehad_PC_80.root";       
+  //roostr = "file_user_Ehad_PC_80.root";
+  
   testcn->Initialization( roostr );
   
-  if( 0 ) {
+  if( 1 ) {
     testcn->SetMeas2Expt();
     testcn->threshold_sigma = 3;
     testcn->Plotting_decomposition( testcn->matrix_pred, testcn->matrix_fake_meas, testcn->matrix_syst_abscov, 1, "aa" );
   }
 
-  if( 1 ) {
-    testcn->threshold_sigma = 3;
-    
+  if( 0 ) {
     int ntoys = 100;
     testcn->ProduceVariation( ntoys );
     
     int itoy = 90;// default
     testcn->SetToy(itoy);
     testcn->threshold_sigma = 3;
-    testcn->Plotting_decomposition( testcn->matrix_pred, testcn->matrix_fake_meas*0.1, testcn->matrix_syst_abscov, 1, "aa" );
+    testcn->Plotting_decomposition( testcn->matrix_pred, testcn->matrix_fake_meas*0.1, testcn->matrix_syst_abscov, 2, "aa" );
   }
   
 }

@@ -159,7 +159,7 @@ void TCN::ProduceVariation(int ntoys)
       
     for(int idx=0; idx<BINS; idx++) {
       double val_with_syst = matrix_variation(idx,0) + matrix_pred(0, idx);// key point
-      if( val_with_syst<0 ) val_with_syst = 0;// ??? remove this requirement or not
+      if( val_with_syst<0 ) val_with_syst = 0;// ??? remove this requirement or not. We should throw out this pesudo expt.
       map_toy_meas[itoy][idx+1] = val_with_syst;
       // array_obj_total[idx] = val_with_syst;
     }// idx
@@ -213,6 +213,10 @@ void TCN::Plotting_decomposition(TMatrixD matrix_pred_temp, TMatrixD matrix_meas
   TMatrixD matrix_lambda_cov_inv = matrix_lambda_cov; matrix_lambda_cov_inv.Invert();
   double chi2_lambda = (matrix_lambda_delta * matrix_lambda_cov_inv * matrix_lambda_delta_T)(0,0);
   double pvalue_lambda = TMath::Prob( chi2_lambda, rows );
+  if( pvalue_lambda<1e-16 ) {
+    cout<<" ---> WARNING (pvalue_lambda): pvalue reach the ROOT limit "<<endl;
+    pvalue_lambda = 1e-16;
+  }
   double significance_lambda = sqrt( TMath::ChisquareQuantile( 1-pvalue_lambda, 1 ) );
   cout<<TString::Format(" ---> check chi2_lambda %4.2f, ndf %d, pvalue %10.8f, %4.2f sigma",
                         chi2_lambda, rows, pvalue_lambda, significance_lambda)<<endl<<endl;
@@ -245,8 +249,16 @@ void TCN::Plotting_decomposition(TMatrixD matrix_pred_temp, TMatrixD matrix_meas
     if( size_map_epsilon_above_threshold_sigma==1 ) {
       sum_chi2_AA = pow(map_epsilon_above_threshold_sigma.begin()->second, 2);
       double pvalue_local = TMath::Prob( pow(map_epsilon_above_threshold_sigma.begin()->second, 2), 1 );
+      if( pvalue_local<1e-16 ) {
+	cout<<" ---> WARNING (pvalue_local): pvalue reach the ROOT limit "<<endl;
+	pvalue_local = 1e-16;
+      }
       double significance_local = fabs( map_epsilon_above_threshold_sigma.begin()->second );
       pvalue_global = 1 - pow( 1-pvalue_local, rows);
+      if( pvalue_global<1e-16 ) {
+	cout<<" ---> WARNING (pvalue_global): pvalue reach the ROOT limit "<<endl;
+	pvalue_global = 1e-16;
+      }
       significance_global = sqrt( TMath::ChisquareQuantile( 1-pvalue_global, 1 ) );
       cout<<TString::Format(" LEE correction: local: %4.2f sigma, global: %4.2f sigma",
                             significance_local, significance_global)<<endl<<endl;      
@@ -260,9 +272,17 @@ void TCN::Plotting_decomposition(TMatrixD matrix_pred_temp, TMatrixD matrix_meas
 
       int user_vec_size = size_map_epsilon_above_threshold_sigma;
       double pvalue_local = TMath::Prob( sum_chi2_AA, user_vec_size );
+      if( pvalue_local<1e-16 ) {
+	cout<<" ---> WARNING (pvalue_local): pvalue reach the ROOT limit "<<endl;
+	pvalue_local = 1e-16;
+      }
       double significance_local = sqrt( TMath::ChisquareQuantile( 1-pvalue_local, user_vec_size ) );
       double coeff = TMath::Factorial(rows)/TMath::Factorial(rows-user_vec_size)/TMath::Factorial(user_vec_size);
       pvalue_global = coeff * pvalue_local;
+      if( pvalue_global<1e-16 ) {
+	cout<<" ---> WARNING (pvalue_global): pvalue reach the ROOT limit "<<endl;
+	pvalue_global = 1e-16;
+      }
       significance_global = sqrt( TMath::ChisquareQuantile( 1-pvalue_global, 1 ) );
       cout<<TString::Format(" LEE correction: local: %4.2f sigma, global: %4.2f sigma",
                             significance_local, significance_global)<<endl<<endl;  
